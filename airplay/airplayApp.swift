@@ -1,10 +1,3 @@
-//
-//  airplayApp.swift
-//  airplay
-//
-//  Created by mert koksal on 10.07.2026.
-//
-
 import SwiftUI
 
 @main
@@ -13,5 +6,7 @@ struct airplayApp: App {
         WindowGroup {
             ContentView()
         }
+        .windowStyle(.hiddenTitleBar)
+        .defaultSize(width: 560, height: 620)
     }
 }
