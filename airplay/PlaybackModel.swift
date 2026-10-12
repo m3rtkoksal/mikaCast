@@ -48,6 +48,10 @@ final class PlaybackModel {
         applyStatus(key: statusKey, arg: statusFormatArg)
     }
 
+    func reportUnsupportedFile() {
+        applyStatus(key: "error_unsupported_file")
+    }
+
     private func applyStatus(key: String, arg: String? = nil) {
         statusKey = key
         statusFormatArg = arg
@@ -58,7 +62,7 @@ final class PlaybackModel {
         }
     }
 
-    func play(file url: URL) async {
+    func play(file url: URL, securityScopedRoot: URL? = nil) async {
         stop(clearStatus: false)
         sourceURL = url
         currentFileName = url.lastPathComponent
@@ -66,14 +70,18 @@ final class PlaybackModel {
         applyStatus(key: "status_starting")
         stallRecoveryCount = 0
 
-        if url.startAccessingSecurityScopedResource() {
-            securityScopedURL = url
+        let scopeURL = securityScopedRoot ?? url
+        if scopeURL.startAccessingSecurityScopedResource() {
+            securityScopedURL = scopeURL
         }
+
+        // Yield so the spinner / "Starting…" paints before heavy work.
+        await Task.yield()
 
         do {
             let progressHandler: @Sendable (String) -> Void = { [weak self] message in
                 Task { @MainActor in
-                    // Progress comes as "Preparing… 00:01:23" — keep raw while preparing.
+                    self?.isPreparing = true
                     self?.statusKey = "status_preparing"
                     self?.statusFormatArg = message
                     self?.statusMessage = message
@@ -88,33 +96,38 @@ final class PlaybackModel {
 
             applyStatus(key: "status_playing")
 
+            // Remuxed HEVC/HDR often reports isPlayable=false even when it plays fine.
             let asset = AVURLAsset(url: session.playbackURL)
-            // isPlayable can be false for some remuxed HEVC files even when they play fine.
-            // Prefer checking tracks; only fail if there is no video track at all.
-            let tracks = try await asset.load(.tracks)
-            let hasVideo = tracks.contains { $0.mediaType == .video }
-            guard hasVideo else {
-                throw PlaybackError.notPlayable
-            }
+            _ = await assetLooksPlayable(asset)
 
             let item = AVPlayerItem(asset: asset)
-            item.preferredForwardBufferDuration = 8
-            item.canUseNetworkResourcesForLiveStreamingWhilePaused = true
+            item.preferredForwardBufferDuration = 12
 
             clearItemObservers()
             observePlayerItem(item)
 
             player.replaceCurrentItem(with: item)
             player.play()
+            print("[MikaCast] playing \(session.playbackURL.lastPathComponent) from \(url.lastPathComponent)")
         } catch {
+            let message = error.localizedDescription
+            print("[MikaCast] ERROR prepare/play failed")
+            print("[MikaCast] file: \(url.path)")
+            print("[MikaCast] \(message)")
+            if let transcoder = error as? TranscoderError {
+                print("[MikaCast] transcoder: \(transcoder)")
+            }
+            dump(error, name: "[MikaCast] errorDump", maxDepth: 2)
+
             statusKey = "error"
             statusFormatArg = nil
-            statusMessage = error.localizedDescription
+            statusMessage = message
             currentFileName = nil
             sourceURL = nil
             endSecurityScopedAccess()
             sessionCleanup?()
             sessionCleanup = nil
+            FFmpegTranscoder.purgeOrphanedTemps()
         }
 
         isPreparing = false
@@ -134,6 +147,17 @@ final class PlaybackModel {
         if clearStatus {
             applyStatus(key: "status_idle")
         }
+    }
+
+    private func assetLooksPlayable(_ asset: AVURLAsset) async -> Bool {
+        for _ in 0..<8 {
+            let tracks = (try? await asset.load(.tracks)) ?? []
+            if tracks.contains(where: { $0.mediaType == .video }) {
+                return true
+            }
+            try? await Task.sleep(nanoseconds: 200_000_000)
+        }
+        return (try? await asset.load(.isPlayable)) ?? false
     }
 
     private func endSecurityScopedAccess() {
@@ -164,6 +188,8 @@ final class PlaybackModel {
             ) { [weak self] notification in
                 Task { @MainActor in
                     if let error = notification.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error {
+                        print("[MikaCast] ERROR playback failed: \(error.localizedDescription)")
+                        dump(error, name: "[MikaCast] playbackError", maxDepth: 2)
                         self?.statusKey = "error"
                         self?.statusFormatArg = nil
                         self?.statusMessage = error.localizedDescription

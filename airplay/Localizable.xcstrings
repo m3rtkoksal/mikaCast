@@ -96,6 +96,29 @@
         }
       }
     },
+    "error_unsupported_file" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unsupported file type. Choose an MP4, MOV, or MKV."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tipo de archivo no compatible. Elige MP4, MOV o MKV."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desteklenmeyen dosya. MP4, MOV veya MKV seç."
+          }
+        }
+      }
+    },
     "lang_en" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -187,6 +210,9 @@
           }
         }
       }
+    },
+    "MikaCast" : {
+
     },
     "select_file" : {
       "extractionState" : "stale",

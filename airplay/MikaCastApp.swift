@@ -1,9 +1,13 @@
 import SwiftUI
 
 @main
-struct airplayApp: App {
+struct MikaCastApp: App {
+    init() {
+        FFmpegTranscoder.purgeOrphanedTemps()
+    }
+
     var body: some Scene {
-        WindowGroup {
+        WindowGroup("MikaCast") {
             ContentView()
         }
         .windowStyle(.hiddenTitleBar)

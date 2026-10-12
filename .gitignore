@@ -2,3 +2,6 @@
 xcuserdata/
 DerivedData/
 airplay/Resources/ffmpeg
+.tmp-test/
+mika-screen/
+*.pio/
